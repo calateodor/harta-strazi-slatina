@@ -790,15 +790,25 @@ $("#btnClear").onclick = (e) => {
 
 // ---------- Google (only when config.js carries a key) ----------
 function loadGoogle() {
+  let failed = false;
   window.gm_authFailure = () => {
+    if (failed) return;
+    failed = true;
     GOOGLE = false;
     setBase(state.base);
     $("#sv").hidden = true;
     updateNote();
     toast("Cheia Google nu e acceptată pe acest site. Folosesc imaginile Esri.");
   };
+  // Key problems such as a disabled API or missing billing are only reported on the console.
+  const consoleError = console.error;
+  console.error = function (...args) {
+    if (/Google Maps JavaScript API error/.test(String(args[0]))) window.gm_authFailure();
+    return consoleError.apply(this, args);
+  };
   window.__gmReady = async () => {
     try { await google.maps.importLibrary("streetView"); } catch (e) {}
+    if (failed) return;
     GOOGLE = true;
     setBase(state.base);
     updateNote();
