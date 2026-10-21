@@ -1,0 +1,17 @@
+STRĂZI SLATINA ÎN GOOGLE MY MAPS (satelit Google, fără cheie API)
+Date: OpenStreetMap, 2026-10-21
+
+Varianta A - toate străzile, marchezi direct în Google
+1. Intră pe https://www.google.com/mymaps (logat cu contul Google) > CREAȚI O HARTĂ NOUĂ.
+2. La „Strat fără titlu” apasă „Importați” și alege fișierul  Strazi-Slatina-toate.kml
+3. Jos, la „Hartă de bază”, alege „Satelit” (sau „Hibrid”).
+4. Ca să marchezi o stradă: click pe ea > iconița de găleată > alege culoarea și grosimea.
+   (Dacă găleata e gri: la strat > „Stiluri individuale”.)
+5. Ca numele să fie afișate pe hartă: la strat > „Stiluri individuale” > „Setați etichetele” > „name”.
+6. Harta apare și pe telefon: aplicația Google Maps > Salvate > Hărți.
+
+Varianta B - marchezi comod pe harta online, apoi trimiți în Google
+1. Deschide https://calateodor.github.io/harta-strazi-slatina/
+2. Caută și bifează străzile, alege culori.
+3. Apasă „Export KML pentru Google” > se descarcă Strazi-marcate-Slatina-<data>.kml
+4. Importă fișierul în Google My Maps, ca la pașii 1-3 de mai sus. Culorile se păstrează.

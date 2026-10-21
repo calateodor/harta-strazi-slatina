@@ -1,0 +1,874 @@
+<!doctype html>
+<html lang="ro">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Străzi Slatina</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700&display=swap">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+/* Layout: full-bleed map; floating index panel on the left (bottom sheet on phones); view switcher top-right. */
+:root {
+  --paper: #ffffff;
+  --paper-2: #f2f4f7;
+  --ink: #18202e;
+  --ink-2: #5a6475;
+  --line: #dde2ea;
+  --accent: #1d4ed8;
+  --accent-ink: #ffffff;
+  --shadow: 0 2px 6px rgba(20, 28, 45, .18), 0 8px 24px rgba(20, 28, 45, .12);
+  --font: "Source Sans 3", "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #1b2130; --paper-2: #252c3d; --ink: #eef1f6; --ink-2: #a3acbd; --line: #343c50;
+    --accent: #7aa2ff; --accent-ink: #0d1424; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #1b2130; --paper-2: #252c3d; --ink: #eef1f6; --ink-2: #a3acbd; --line: #343c50;
+  --accent: #7aa2ff; --accent-ink: #0d1424; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { font-family: var(--font); font-size: 15px; color: var(--ink); background: var(--paper-2); }
+button, input { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+#map { position: fixed; inset: 0; background: #e8e6e1; }
+
+/* ---------- panel ---------- */
+.panel {
+  position: fixed; z-index: 1000; top: 12px; left: 12px; bottom: 12px; width: 360px;
+  display: flex; flex-direction: column; background: var(--paper); border-radius: 14px;
+  box-shadow: var(--shadow); overflow: hidden;
+}
+.panel header { padding: 14px 16px 10px; display: grid; gap: 10px; border-bottom: 1px solid var(--line); }
+.title-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.title-row h1 { margin: 0; font-size: 20px; font-weight: 700; letter-spacing: -.01em; }
+.title-row .count { color: var(--ink-2); font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sheet-toggle { display: none; }
+.search { position: relative; }
+.search input {
+  width: 100%; height: 42px; padding: 0 38px 0 40px; border: 1px solid var(--line); border-radius: 21px;
+  background: var(--paper-2); outline: none;
+}
+.search input:focus { border-color: var(--accent); background: var(--paper); }
+.search input::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; }
+.search svg { position: absolute; left: 13px; top: 12px; width: 18px; height: 18px; color: var(--ink-2); }
+.search .clear { position: absolute; right: 6px; top: 6px; width: 30px; height: 30px; border: 0; border-radius: 15px; background: transparent; color: var(--ink-2); font-size: 18px; line-height: 1; }
+.tabs { display: flex; gap: 6px; }
+.tabs button {
+  flex: 1; height: 34px; border: 1px solid var(--line); border-radius: 17px; background: transparent;
+  font-weight: 600; font-size: 14px; color: var(--ink-2);
+}
+.tabs button[aria-selected="true"] { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+.pen { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-2); }
+.swatches { display: flex; gap: 6px; flex-wrap: wrap; }
+.sw {
+  width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--paper); padding: 0;
+  background: var(--c); box-shadow: 0 0 0 1px var(--line);
+}
+.sw[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--ink); }
+
+.list { flex: 1; overflow-y: auto; padding: 4px 0 8px; overscroll-behavior: contain; }
+.list ul { list-style: none; margin: 0; padding: 0; }
+.letter {
+  position: sticky; top: 0; z-index: 1; padding: 6px 16px 4px; background: var(--paper);
+  font-size: 12px; font-weight: 700; letter-spacing: .08em; color: var(--ink-2);
+}
+.row { display: flex; align-items: center; gap: 4px; padding: 0 8px 0 10px; }
+.row:hover { background: var(--paper-2); }
+.tick {
+  flex: none; width: 34px; height: 34px; border: 0; background: transparent; display: grid; place-items: center; border-radius: 8px;
+}
+.tick span {
+  width: 18px; height: 18px; border-radius: 5px; border: 2px solid var(--ink-2); display: grid; place-items: center;
+}
+.tick[aria-pressed="true"] span { background: var(--c); border-color: var(--c); }
+.tick[aria-pressed="true"] span::after { content: ""; width: 5px; height: 9px; border: solid #fff; border-width: 0 2px 2px 0; transform: translateY(-1px) rotate(45deg); }
+.go { flex: 1; min-width: 0; text-align: left; border: 0; background: transparent; padding: 7px 4px; display: grid; gap: 1px; border-radius: 6px; }
+.go .nm { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.go .meta { font-size: 12.5px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.row .x { flex: none; width: 30px; height: 30px; border: 0; background: transparent; color: var(--ink-2); font-size: 18px; border-radius: 15px; }
+.row .x:hover { background: var(--line); color: var(--ink); }
+.group-h { display: flex; align-items: center; gap: 8px; padding: 10px 16px 4px; font-size: 13px; font-weight: 700; color: var(--ink-2); }
+.group-h i { width: 12px; height: 12px; border-radius: 3px; background: var(--c); }
+.empty { padding: 28px 22px; color: var(--ink-2); line-height: 1.45; }
+.empty b { color: var(--ink); }
+
+.panel footer { border-top: 1px solid var(--line); padding: 10px 12px; display: flex; flex-wrap: wrap; gap: 6px; }
+.btn {
+  height: 34px; padding: 0 12px; border-radius: 17px; border: 1px solid var(--line); background: var(--paper);
+  font-size: 13.5px; font-weight: 600;
+}
+.btn:hover { background: var(--paper-2); }
+a.btn { display: inline-flex; align-items: center; color: var(--ink); text-decoration: none; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.btn.danger.armed { background: #c62828; border-color: #c62828; color: #fff; }
+.note { width: 100%; font-size: 12px; color: var(--ink-2); line-height: 1.4; padding: 2px 4px 0; }
+
+/* ---------- view switcher ---------- */
+.views {
+  position: fixed; z-index: 1000; top: 12px; right: 12px; display: grid; gap: 8px; justify-items: end;
+}
+.seg { display: flex; background: var(--paper); border-radius: 10px; box-shadow: var(--shadow); padding: 3px; gap: 2px; }
+.seg button { border: 0; background: transparent; height: 34px; padding: 0 12px; border-radius: 8px; font-weight: 600; font-size: 14px; color: var(--ink-2); }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+.opts { display: grid; gap: 6px; justify-items: end; }
+.chip {
+  display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px 0 10px; border-radius: 16px;
+  background: var(--paper); box-shadow: var(--shadow); border: 0; font-size: 13.5px; font-weight: 600;
+}
+.chip .box { width: 16px; height: 16px; border-radius: 4px; border: 2px solid var(--ink-2); }
+.chip[aria-pressed="true"] .box { background: var(--accent); border-color: var(--accent); }
+a.chip { color: var(--ink); text-decoration: none; }
+.opts-toggle { display: none; }
+
+/* ---------- map labels ---------- */
+.lbl { width: 0; height: 0; }
+.lbl .pill {
+  position: absolute; transform: translate(-50%, -50%); white-space: nowrap; cursor: pointer;
+  background: #fff; color: #141a26; border: 2px solid var(--c); border-radius: 12px;
+  padding: 1px 8px 1px 6px; font: 700 12.5px/1.25 var(--font); display: flex; align-items: center; gap: 5px;
+  box-shadow: 0 1px 4px rgba(0,0,0,.35);
+}
+.lbl .pill::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--c); flex: none; }
+.z-far .lbl .pill { font-size: 11px; padding: 0 6px 0 4px; border-width: 1.5px; }
+.z-far .lbl.extra, .z-mid .lbl.extra { display: none; }
+.nm-lbl { width: 0; height: 0; pointer-events: none; }
+.nm-lbl span {
+  position: absolute; transform: translate(-50%, -50%); white-space: nowrap;
+  font: 600 12px/1 var(--font); color: #1e2433;
+  text-shadow: 0 0 2px #fff, 0 0 2px #fff, 0 0 3px #fff, 0 0 4px #fff;
+}
+.on-sat .nm-lbl span { color: #fff; text-shadow: 0 0 2px #000, 0 0 2px #000, 0 0 3px #000, 0 0 4px #000; }
+.flash { animation: flash 1.6s ease-out forwards; }
+@keyframes flash { 0%, 40% { stroke-opacity: .9; } 100% { stroke-opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .flash { animation-duration: .01s; } }
+
+/* ---------- popup ---------- */
+.st-pop .leaflet-popup-content-wrapper { border-radius: 12px; }
+.st-pop .leaflet-popup-content { margin: 12px 14px; font-family: var(--font); font-size: 14px; color: #18202e; min-width: 220px; }
+.pp-name { font-size: 16px; font-weight: 700; line-height: 1.25; margin: 0 22px 2px 0; }
+.pp-meta { color: #5a6475; font-size: 13px; margin-bottom: 10px; }
+.pp-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+.pp-row .sw { border-color: #fff; box-shadow: 0 0 0 1px #cfd5df; }
+.pp-row .sw[aria-pressed="true"] { box-shadow: 0 0 0 2px #18202e; }
+.pp-btn {
+  height: 32px; padding: 0 12px; border-radius: 16px; border: 1px solid #cfd5df; background: #fff; color: #18202e;
+  font: 600 13.5px var(--font); text-decoration: none; display: inline-flex; align-items: center;
+}
+.pp-btn.primary { background: #1d4ed8; border-color: #1d4ed8; color: #fff; }
+.pp-btn:hover { filter: brightness(.96); }
+a.pp-btn { color: #18202e; }
+.leaflet-container a.pp-btn { color: #18202e; }
+
+.leaflet-tooltip.hover-tip { font: 600 13px var(--font); padding: 3px 8px; border-radius: 6px; }
+.leaflet-control-attribution { font-family: var(--font); }
+
+.sv {
+  position: fixed; z-index: 1500; top: 12px; right: 12px; bottom: 12px; left: 384px;
+  background: #111; border-radius: 14px; overflow: hidden; box-shadow: var(--shadow);
+}
+.sv-pano { position: absolute; inset: 0; }
+.sv-close {
+  position: absolute; z-index: 2; top: 10px; left: 50%; transform: translateX(-50%); height: 36px; padding: 0 16px;
+  border: 0; border-radius: 18px; background: #fff; color: #18202e; font-weight: 700; box-shadow: var(--shadow);
+}
+.toast {
+  position: fixed; z-index: 2000; left: 50%; bottom: 28px; transform: translate(-50%, 20px); opacity: 0;
+  background: #18202e; color: #fff; padding: 10px 16px; border-radius: 10px; font-weight: 600; font-size: 14px;
+  transition: opacity .2s, transform .2s; pointer-events: none; max-width: calc(100% - 32px);
+}
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+/* ---------- phones: bottom sheet ---------- */
+@media (max-width: 720px) {
+  .panel {
+    top: auto; left: 0; right: 0; bottom: 0; width: auto; height: 60%; border-radius: 16px 16px 0 0;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .panel.collapsed { height: auto; }
+  .panel.collapsed .list, .panel.collapsed footer, .panel.collapsed .tabs, .panel.collapsed .pen { display: none; }
+  .panel header { padding: 8px max(16px, env(safe-area-inset-left, 0px)) 10px max(16px, env(safe-area-inset-right, 0px)); }
+  .sheet-toggle {
+    display: block; justify-self: center; width: 56px; height: 18px; border: 0; background: transparent; padding: 0;
+  }
+  .sheet-toggle::before { content: ""; display: block; margin: 6px auto; width: 40px; height: 5px; border-radius: 3px; background: var(--line); }
+  .title-row h1 { font-size: 18px; }
+  .views { top: max(10px, env(safe-area-inset-top, 0px)); right: max(10px, env(safe-area-inset-right, 0px)); }
+  .seg button { padding: 0 9px; font-size: 13px; }
+  .leaflet-bottom { bottom: 60%; }
+  .sv { inset: 0 0 auto 0; height: 55%; border-radius: 0; }
+  .panel footer { flex-wrap: nowrap; overflow-x: auto; padding-inline: max(12px, env(safe-area-inset-left, 0px)) max(12px, env(safe-area-inset-right, 0px)); }
+  .panel footer .btn { flex: none; }
+  .note { display: none; }
+  .opts-toggle { display: inline-flex; }
+  .views:not(.open) .opts { display: none; }
+  body.sheet-collapsed .leaflet-bottom { bottom: 132px; }
+}
+</style>
+</head>
+<body>
+<div id="map" aria-label="Harta străzilor din Slatina"></div>
+
+<aside class="panel" id="panel">
+  <header>
+    <button class="sheet-toggle" id="sheetToggle" aria-label="Restrânge sau extinde lista"></button>
+    <div class="title-row">
+      <h1>Străzi Slatina</h1>
+      <span class="count" id="count"></span>
+    </div>
+    <label class="search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input id="q" type="search" placeholder="Caută o stradă (ex: teodoroiu)" autocomplete="off" aria-label="Caută o stradă">
+      <button class="clear" id="qClear" type="button" aria-label="Șterge căutarea" hidden>×</button>
+    </label>
+    <div class="tabs" role="tablist">
+      <button id="tabAll" role="tab" aria-selected="true">Toate</button>
+      <button id="tabMarked" role="tab" aria-selected="false">Marcate</button>
+    </div>
+    <div class="pen"><span>Culoare marcaj:</span><div class="swatches" id="penSwatches"></div></div>
+  </header>
+  <div class="list" id="list"></div>
+  <footer>
+    <button class="btn primary" id="btnKml" type="button">Export KML pentru Google</button>
+    <button class="btn" id="btnCopy" type="button">Copiază lista</button>
+    <button class="btn" id="btnSave" type="button">Salvează</button>
+    <button class="btn" id="btnLoad" type="button">Încarcă</button>
+    <button class="btn danger" id="btnClear" type="button">Șterge marcajele</button>
+    <a class="btn" href="Strazi-Slatina-toate.kml" download>KML cu toate străzile</a>
+    <input id="file" type="file" accept=".json,application/json" hidden>
+    <div class="note" id="note"></div>
+  </footer>
+</aside>
+
+<div class="views">
+  <div class="seg" id="bases" role="group" aria-label="Fundal hartă"></div>
+  <div class="opts">
+    <button class="chip" id="optNames" aria-pressed="false"><span class="box"></span>Numele tuturor străzilor</button>
+    <button class="chip" id="optLines" aria-pressed="false"><span class="box"></span>Contur străzi</button>
+    <button class="chip" id="optBoundary" aria-pressed="true"><span class="box"></span>Limita municipiului</button>
+    <a class="chip" id="gmaps" href="https://www.google.com/maps" target="_blank" rel="noopener">Deschide aici în Google Maps ↗</a>
+  </div>
+  <button class="chip opts-toggle" id="optsToggle" aria-expanded="false">Straturi ▾</button>
+</div>
+
+<div class="sv" id="sv" hidden>
+  <div class="sv-pano" id="svPano"></div>
+  <button class="sv-close" id="svClose" type="button">Închide Street View</button>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/leaflet.gridlayer.googlemutant@0.16.0/dist/Leaflet.GoogleMutant.js"></script>
+<script src="config.js"></script>
+<script>
+const DATA = /*__DATA__*/null;
+
+const COLORS = ["#e53935", "#fb8c00", "#fdd835", "#43a047", "#00acc1", "#1e88e5", "#8e24aa", "#d81b60"];
+const COLOR_NAMES = { "#e53935": "Roșu", "#fb8c00": "Portocaliu", "#fdd835": "Galben", "#43a047": "Verde",
+  "#00acc1": "Turcoaz", "#1e88e5": "Albastru", "#8e24aa": "Mov", "#d81b60": "Roz" };
+const STORE = "strazi-slatina-v1";
+const OSM_DAY = new Date(DATA.osm).toLocaleDateString("ro-RO");
+
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const fold = (s) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+const fmtLen = (m) => m < 1000 ? `${m} m` : `${(m / 1000).toLocaleString("ro-RO", { maximumFractionDigits: 1 })} km`;
+const SHORT = [["Strada ", "Str. "], ["Bulevardul ", "Bd. "], ["Aleea ", "Al. "], ["Intrarea ", "Intr. "], ["Fundătura ", "Fund. "], ["Prelungirea ", "Prel. "]];
+const short = (n) => { for (const [a, b] of SHORT) if (n.startsWith(a)) return b + n.slice(a.length); return n; };
+
+const STREETS = DATA.streets;
+const byId = new Map(STREETS.map((s) => [s.id, s]));
+for (const s of STREETS) {
+  s.label = s.u ? "Fără nume" : short(s.n);
+  s.full = s.u ? `Stradă fără nume (${s.ctx})` : s.n;
+  s.f = fold(s.n + " " + (s.ctx || ""));
+}
+const NAMED = STREETS.filter((s) => !s.u);
+
+// ---------- state ----------
+const state = { marked: {}, pen: COLORS[0], base: "map", names: false, lines: false, boundary: true, tab: "all", q: "" };
+try { Object.assign(state, JSON.parse(localStorage.getItem(STORE) || "{}")); } catch (e) {}
+for (const id of Object.keys(state.marked)) if (!byId.has(id)) delete state.marked[id];
+function persist() {
+  const { marked, pen, base, names, lines, boundary } = state;
+  try { localStorage.setItem(STORE, JSON.stringify({ marked, pen, base, names, lines, boundary })); } catch (e) {}
+}
+
+// ---------- map ----------
+const map = L.map("map", { zoomControl: false, minZoom: 11, maxZoom: 20, worldCopyJump: false });
+L.control.zoom({ position: "bottomright", zoomInTitle: "Mărește", zoomOutTitle: "Micșorează" }).addTo(map);
+L.control.scale({ imperial: false, position: "bottomright" }).addTo(map);
+map.attributionControl.setPrefix(false).addAttribution(`Străzi: © OpenStreetMap contributors, ${OSM_DAY}`);
+
+const PANES = { boundary: 380, hit: 400, casing: 440, marked: 450, flash: 460, names: 590 };
+for (const [p, z] of Object.entries(PANES)) {
+  const el = map.createPane(p);
+  el.style.zIndex = z;
+  if (p !== "hit") el.style.pointerEvents = "none";
+}
+
+const esri = (svc, o = {}) => L.tileLayer(`https://server.arcgisonline.com/ArcGIS/rest/services/${svc}/MapServer/tile/{z}/{y}/{x}`,
+  { maxZoom: 20, maxNativeZoom: 19, ...o });
+const SAT_ATTR = "Imagini satelit © Esri, Maxar, Earthstar Geographics";
+const esriSat = () => esri("World_Imagery", { attribution: SAT_ATTR, maxNativeZoom: 18 });
+const GKEY = String(window.GOOGLE_MAPS_KEY || "").trim();
+let GOOGLE = false;
+const BASES = {
+  map: { name: "Hartă", sat: false, g: "roadmap", layer: () => esri("World_Street_Map", { attribution: "Hartă © Esri, HERE, Garmin, OpenStreetMap contributors" }) },
+  sat: { name: "Satelit", sat: true, g: "satellite", layer: esriSat },
+  hyb: { name: "Hibrid", sat: true, g: "hybrid", layer: () => L.layerGroup([esriSat(),
+    esri("Reference/World_Transportation"), esri("Reference/World_Boundaries_and_Places")]) },
+  topo: { name: "Teren", sat: false, g: "terrain", layer: () => esri("World_Topo_Map", { attribution: "© Esri, HERE, Garmin, OpenStreetMap contributors" }) },
+  osm: { name: "OSM", sat: false, layer: () => L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+    { maxZoom: 20, maxNativeZoom: 19, attribution: "© OpenStreetMap contributors" }) },
+};
+let baseLayer = null;
+function setBase(key) {
+  if (!BASES[key]) key = "map";
+  state.base = key;
+  if (baseLayer) map.removeLayer(baseLayer);
+  const b = BASES[key];
+  baseLayer = (GOOGLE && b.g ? L.gridLayer.googleMutant({ type: b.g, maxZoom: 21 }) : b.layer()).addTo(map);
+  map.getContainer().classList.toggle("on-sat", BASES[key].sat);
+  for (const b of document.querySelectorAll("#bases button")) b.setAttribute("aria-pressed", b.dataset.k === key);
+  styleAllHit();
+  updateGmaps();
+  persist();
+}
+$("#bases").innerHTML = Object.entries(BASES).map(([k, b]) => `<button data-k="${k}" aria-pressed="false">${b.name}</button>`).join("");
+$("#bases").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) setBase(b.dataset.k); });
+
+// municipality boundary
+const boundary = L.polygon(DATA.boundary, { pane: "boundary", interactive: false, color: "#7b2cbf", weight: 2.5, dashArray: "8 6", fill: false });
+const boundaryBounds = boundary.getBounds();
+map.setMaxBounds(boundaryBounds.pad(0.6));
+
+// one hit/outline polyline per street; marked styling lives on separate panes above it
+const hitRenderer = L.canvas({ pane: "hit", tolerance: 8 });
+const casingRenderer = L.canvas({ pane: "casing" });
+const markedRenderer = L.canvas({ pane: "marked" });
+const flashRenderer = L.svg({ pane: "flash" });
+let hovered = null;
+
+function hitStyle(s) {
+  const sat = BASES[state.base].sat;
+  if (s === hovered) return { color: sat ? "#ffffff" : "#1d4ed8", opacity: .95, weight: 6 };
+  if (state.lines) return { color: sat ? "#ffffff" : "#3a4a6b", opacity: sat ? .75 : .55, weight: s.r <= 3 ? 3 : 2 };
+  return { opacity: 0, weight: 4 };
+}
+function styleAllHit() { for (const s of STREETS) s.hit.setStyle(hitStyle(s)); }
+
+for (const s of STREETS) {
+  s.hit = L.polyline(s.g, { renderer: hitRenderer, lineCap: "round", lineJoin: "round", ...hitStyle(s) }).addTo(map);
+  s.hit.on("click", (e) => { L.DomEvent.stop(e); openStreet(s, e.latlng); });
+  s.hit.on("mouseover", () => { hovered = s; s.hit.setStyle(hitStyle(s)); });
+  s.hit.on("mouseout", () => { if (hovered === s) hovered = null; s.hit.setStyle(hitStyle(s)); });
+  s.hit.bindTooltip(() => esc(s.full), { sticky: true, direction: "top", offset: [0, -8], className: "hover-tip", opacity: 1 });
+}
+
+// ---------- marked streets ----------
+function labelIcon(s, color, extra) {
+  return L.divIcon({ className: "lbl" + (extra ? " extra" : ""), iconSize: [0, 0],
+    html: `<div class="pill" style="--c:${color}">${esc(s.label)}</div>` });
+}
+function drawMarked(s) {
+  if (s.mk) { s.mk.remove(); s.mk = null; s.lbls = null; }
+  const c = state.marked[s.id];
+  if (!c) return;
+  const parts = [
+    L.polyline(s.g, { renderer: casingRenderer, color: "#ffffff", weight: 10, opacity: .95, lineCap: "round", lineJoin: "round", interactive: false }),
+    L.polyline(s.g, { renderer: markedRenderer, color: c, weight: 5.5, opacity: 1, lineCap: "round", lineJoin: "round", interactive: false }),
+  ];
+  s.lbls = s.lp.map((p, i) => {
+    const m = L.marker(p, { icon: labelIcon(s, c, i > 0), keyboard: false, zIndexOffset: 1000 - s.r * 10, riseOnHover: true });
+    m.on("click", () => openStreet(s, m.getLatLng()));
+    return m;
+  });
+  s.mk = L.layerGroup(parts.concat(s.lbls)).addTo(map);
+}
+
+function setMark(s, color) {
+  if (color) state.marked[s.id] = color; else delete state.marked[s.id];
+  drawMarked(s);
+  persist();
+  refreshList();
+  updateCount();
+  scheduleLabels();
+}
+
+// ---------- popup ----------
+const gmSearch = (s) => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent((s.u ? `${s.lp[0][0]},${s.lp[0][1]}` : s.n + ", Slatina"))}`;
+const gmPano = (ll) => `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${ll.lat.toFixed(6)},${ll.lng.toFixed(6)}`;
+const gmSat = (ll, z = 18) => `https://www.google.com/maps/@?api=1&map_action=map&center=${ll.lat.toFixed(6)},${ll.lng.toFixed(6)}&zoom=${Math.round(z)}&basemap=satellite`;
+
+const svButton = (ll, txt) => GOOGLE
+  ? `<button class="pp-btn" data-sv="${ll.lat.toFixed(6)},${ll.lng.toFixed(6)}">${txt}</button>`
+  : `<a class="pp-btn" href="${gmPano(ll)}" target="_blank" rel="noopener">${txt} ↗</a>`;
+
+function nearestOnStreet(s, ll) {
+  let best = null, bd = Infinity;
+  for (const line of s.g) for (const p of line) {
+    const d = (p[0] - ll.lat) ** 2 + (p[1] - ll.lng) ** 2;
+    if (d < bd) { bd = d; best = p; }
+  }
+  return L.latLng(best);
+}
+
+function openStreet(s, at, quiet) {
+  const at2 = at || L.latLng(s.lp[0]);
+  const c = state.marked[s.id];
+  const pano = nearestOnStreet(s, at2);
+  const el = document.createElement("div");
+  el.innerHTML = `
+    <div class="pp-name">${esc(s.u ? "Stradă fără nume" : s.n)}</div>
+    <div class="pp-meta">${esc(s.u ? `fără nume în OSM · ${s.ctx}` : (s.t || "drum"))} · ${fmtLen(s.len)}</div>
+    <div class="pp-row">
+      <button class="pp-btn ${c ? "" : "primary"}" data-act="toggle">${c ? "Demarchează" : "Marchează"}</button>
+      <div class="swatches">${COLORS.map((k) => `<button class="sw" style="--c:${k}" data-c="${k}" aria-pressed="${k === c}" title="${COLOR_NAMES[k]}"></button>`).join("")}</div>
+    </div>
+    <div class="pp-row">
+      ${svButton(pano, "Street View")}
+      <a class="pp-btn" href="${gmSearch(s)}" target="_blank" rel="noopener">În Google Maps ↗</a>
+    </div>`;
+  el.addEventListener("click", (e) => {
+    const t = e.target.closest("button");
+    if (!t) return;
+    if (t.dataset.act === "toggle") setMark(s, state.marked[s.id] ? null : state.pen);
+    else if (t.dataset.c) { state.pen = t.dataset.c; renderPen(); setMark(s, t.dataset.c); }
+    openStreet(s, at2, true);
+  });
+  L.popup({ className: "st-pop", maxWidth: 300, autoPanPaddingTopLeft: panelPad(), autoPanPaddingBottomRight: [20, 20] })
+    .setLatLng(at2).setContent(el).openOn(map);
+  if (!quiet) flash(s);
+}
+
+map.on("contextmenu", (e) => {
+  L.popup({ className: "st-pop", autoPanPaddingTopLeft: panelPad() }).setLatLng(e.latlng).setContent(`
+    <div class="pp-meta">${e.latlng.lat.toFixed(5)}, ${e.latlng.lng.toFixed(5)}</div>
+    <div class="pp-row">
+      ${svButton(e.latlng, "Street View aici")}
+      <a class="pp-btn" href="${gmSat(e.latlng, map.getZoom())}" target="_blank" rel="noopener">Google Maps aici ↗</a>
+    </div>`).openOn(map);
+});
+
+let flashLayer = null;
+function flash(s) {
+  if (flashLayer) flashLayer.remove();
+  flashLayer = L.polyline(s.g, { renderer: flashRenderer, className: "flash", color: "#ffd400", weight: 14, opacity: .9, interactive: false }).addTo(map);
+}
+
+const isPhone = () => window.matchMedia("(max-width: 720px)").matches;
+function panelPad() {
+  if (isPhone()) return [10, 60];
+  return [$("#panel").offsetWidth + 30, 20];
+}
+function panelPadBR() {
+  if (isPhone()) return [10, $("#panel").offsetHeight + 10];
+  return [20, 20];
+}
+function focusStreet(s) {
+  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  map.fitBounds(s.hit.getBounds(), { paddingTopLeft: panelPad(), paddingBottomRight: panelPadBR(), maxZoom: 17, animate: !reduce });
+  let done = false;
+  const go = () => { if (!done) { done = true; openStreet(s); } };
+  map.once("moveend", go);
+  setTimeout(go, 1200);
+}
+
+// ---------- label layout: marked labels always shown (moved along their street to dodge each other),
+// then the optional names of every other street fill the gaps that are left ----------
+const measureCtx = document.createElement("canvas").getContext("2d");
+function textW(t, px, weight) { measureCtx.font = `${weight} ${px}px "Source Sans 3", "Segoe UI", sans-serif`; return measureCtx.measureText(t).width; }
+const KX = Math.cos(44.43 * Math.PI / 180);
+function candidates(s) {
+  if (s.cands) return s.cands;
+  const pts = [s.lp[0]];
+  for (const line of s.g) {
+    const d = [0];
+    for (let i = 1; i < line.length; i++) d.push(d[i - 1] + Math.hypot(line[i][0] - line[i - 1][0], (line[i][1] - line[i - 1][1]) * KX));
+    const total = d[d.length - 1];
+    if (total * 111000 < 120) continue;
+    for (const f of [0.5, 0.3, 0.7, 0.15, 0.85]) {
+      const t = total * f;
+      let i = 1;
+      while (i < d.length - 1 && d[i] < t) i++;
+      const k = (t - d[i - 1]) / ((d[i] - d[i - 1]) || 1);
+      pts.push([line[i - 1][0] + k * (line[i][0] - line[i - 1][0]), line[i - 1][1] + k * (line[i][1] - line[i - 1][1])]);
+    }
+  }
+  const c = L.latLng(s.lp[0]);
+  s.cands = pts.sort((a, b) => c.distanceTo(a) - c.distanceTo(b)).slice(0, 14);
+  return s.cands;
+}
+const namesLayer = L.layerGroup();
+const nameMarkers = new Map();
+let labelsTimer = 0;
+function scheduleLabels() { clearTimeout(labelsTimer); labelsTimer = setTimeout(layoutLabels, 60); }
+function layoutLabels() {
+  const z = map.getZoom();
+  const size = map.getSize();
+  const far = z <= 13;
+  const boxes = [];
+  const hit = (b) => boxes.some((o) => b.x1 < o.x2 && b.x2 > o.x1 && b.y1 < o.y2 && b.y2 > o.y1);
+  const boxAt = (p, w, h) => { const pt = map.latLngToContainerPoint(p); return { x1: pt.x - w / 2, x2: pt.x + w / 2, y1: pt.y - h / 2, y2: pt.y + h / 2 }; };
+
+  const marked = markedList().filter((s) => s.lbls).sort((a, b) => a.r - b.r || b.len - a.len);
+  for (const s of marked) {
+    const w = textW(s.label, far ? 11 : 12.5, 700) + (far ? 24 : 30), h = far ? 20 : 24;
+    let best = null;
+    for (const p of candidates(s)) {
+      const b = boxAt(p, w, h);
+      if (!hit(b)) { best = [p, b]; break; }
+    }
+    if (!best) best = [s.lp[0], boxAt(s.lp[0], w, h)];
+    s.lbls[0].setLatLng(best[0]);
+    boxes.push(best[1]);
+    if (z >= 16) for (const m of s.lbls.slice(1)) boxes.push(boxAt(m.getLatLng(), w, h));
+  }
+
+  namesLayer.clearLayers();
+  if (!state.names) return;
+  const cands = NAMED.filter((s) => !state.marked[s.id]).sort((a, b) => a.r - b.r || b.len - a.len);
+  for (const s of cands) {
+    s.lp.forEach((p, i) => {
+      if (i > 0 && z < 16) return;
+      const pt = map.latLngToContainerPoint(p);
+      if (pt.x < -50 || pt.y < -20 || pt.x > size.x + 50 || pt.y > size.y + 20) return;
+      const w = textW(s.label, 12, 600) + 8;
+      const b = { x1: pt.x - w / 2, x2: pt.x + w / 2, y1: pt.y - 9, y2: pt.y + 9 };
+      if (hit(b)) return;
+      boxes.push(b);
+      const key = s.id + "|" + i;
+      let m = nameMarkers.get(key);
+      if (!m) {
+        m = L.marker(p, { pane: "names", interactive: false, keyboard: false,
+          icon: L.divIcon({ className: "nm-lbl", iconSize: [0, 0], html: `<span>${esc(s.label)}</span>` }) });
+        nameMarkers.set(key, m);
+      }
+      namesLayer.addLayer(m);
+    });
+  }
+}
+namesLayer.addTo(map);
+map.on("moveend zoomend", scheduleLabels);
+map.on("zoomend", zoomClass);
+function zoomClass() {
+  const z = map.getZoom(), el = map.getContainer();
+  el.classList.toggle("z-far", z <= 13);
+  el.classList.toggle("z-mid", z > 13 && z < 16);
+}
+map.on("moveend", updateGmaps);
+function updateGmaps() {
+  if (!map._loaded) return;
+  const c = map.getCenter(), z = Math.round(map.getZoom());
+  $("#gmaps").href = BASES[state.base].sat ? gmSat(c, z)
+    : `https://www.google.com/maps/@?api=1&map_action=map&center=${c.lat.toFixed(6)},${c.lng.toFixed(6)}&zoom=${z}`;
+}
+
+// ---------- toggles ----------
+function setOpt(key, on) {
+  state[key] = on;
+  const btn = { names: "#optNames", lines: "#optLines", boundary: "#optBoundary" }[key];
+  $(btn).setAttribute("aria-pressed", on);
+  if (key === "lines") styleAllHit();
+  if (key === "names") scheduleLabels();
+  if (key === "boundary") on ? boundary.addTo(map) : boundary.remove();
+  persist();
+}
+$("#optNames").onclick = () => setOpt("names", !state.names);
+$("#optLines").onclick = () => setOpt("lines", !state.lines);
+$("#optBoundary").onclick = () => setOpt("boundary", !state.boundary);
+$("#optsToggle").onclick = (e) => {
+  const open = document.querySelector(".views").classList.toggle("open");
+  e.currentTarget.setAttribute("aria-expanded", open);
+  e.currentTarget.textContent = open ? "Straturi ▴" : "Straturi ▾";
+};
+
+// ---------- panel ----------
+function renderPen() {
+  $("#penSwatches").innerHTML = COLORS.map((k) =>
+    `<button class="sw" style="--c:${k}" data-c="${k}" aria-pressed="${k === state.pen}" title="${COLOR_NAMES[k]}"></button>`).join("");
+}
+$("#penSwatches").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-c]");
+  if (!b) return;
+  state.pen = b.dataset.c; renderPen(); persist();
+});
+
+function markedList() {
+  return STREETS.filter((s) => state.marked[s.id]);
+}
+function updateCount() {
+  const m = markedList();
+  const km = m.reduce((a, s) => a + s.len, 0);
+  $("#count").textContent = m.length ? `${m.length} marcate · ${fmtLen(km)}` : `${NAMED.length} străzi`;
+  $("#tabMarked").textContent = `Marcate (${m.length})`;
+}
+
+const rowHTML = (s, removable) => {
+  const c = state.marked[s.id];
+  return `<li class="row" data-id="${esc(s.id)}">
+    <button class="tick" aria-pressed="${!!c}" style="--c:${c || state.pen}" title="${c ? "Demarchează" : "Marchează"}"><span></span></button>
+    <button class="go"><span class="nm">${esc(s.u ? "Stradă fără nume" : s.n)}</span><span class="meta">${esc(s.u ? s.ctx : (s.t || "drum"))} · ${fmtLen(s.len)}</span></button>
+    ${removable ? `<button class="x" title="Scoate din listă" aria-label="Scoate ${esc(s.full)}">×</button>` : ""}
+  </li>`;
+};
+
+function refreshList() {
+  const q = fold(state.q.trim());
+  const list = $("#list");
+  const keepScroll = list.scrollTop;
+  let html = "";
+  if (state.tab === "all") {
+    const hits = NAMED.filter((s) => !q || s.f.includes(q));
+    let letter = "";
+    for (const s of hits) {
+      const L0 = fold(s.k)[0].toUpperCase();
+      const head = /[A-Z]/.test(L0) ? L0 : "#";
+      if (head !== letter) { if (letter) html += "</ul>"; html += `<div class="letter">${head}</div><ul>`; letter = head; }
+      html += rowHTML(s, false);
+    }
+    if (letter) html += "</ul>";
+    if (!hits.length) html = `<div class="empty">Nicio stradă cu numele „${esc(state.q)}”.<br><br>Unele străzi nu au nume în OpenStreetMap. Le găsești direct pe hartă și le poți marca dând click pe ele.</div>`;
+  } else {
+    const m = markedList().filter((s) => !q || s.f.includes(q));
+    if (!m.length) {
+      html = `<div class="empty"><b>Nicio stradă marcată încă.</b><br><br>Bifează o stradă din lista „Toate” sau dă click pe o stradă pe hartă și apasă <b>Marchează</b>. Străzile marcate rămân colorate și cu numele scris la orice zoom.</div>`;
+    } else {
+      for (const col of COLORS) {
+        const g = m.filter((s) => state.marked[s.id] === col);
+        if (!g.length) continue;
+        const km = g.reduce((a, s) => a + s.len, 0);
+        html += `<div class="group-h" style="--c:${col}"><i></i>${COLOR_NAMES[col]} · ${g.length} ${g.length === 1 ? "stradă" : "străzi"} · ${fmtLen(km)}</div><ul>`;
+        html += g.map((s) => rowHTML(s, true)).join("") + "</ul>";
+      }
+    }
+  }
+  list.innerHTML = html;
+  list.scrollTop = keepScroll;
+}
+
+$("#list").addEventListener("click", (e) => {
+  const row = e.target.closest(".row");
+  if (!row) return;
+  const s = byId.get(row.dataset.id);
+  if (e.target.closest(".tick")) setMark(s, state.marked[s.id] ? null : state.pen);
+  else if (e.target.closest(".x")) setMark(s, null);
+  else if (e.target.closest(".go")) { if (isPhone()) setCollapsed(true); focusStreet(s); }
+});
+
+function setTab(t) {
+  state.tab = t;
+  $("#tabAll").setAttribute("aria-selected", t === "all");
+  $("#tabMarked").setAttribute("aria-selected", t === "marked");
+  $("#list").scrollTop = 0;
+  refreshList();
+}
+$("#tabAll").onclick = () => setTab("all");
+$("#tabMarked").onclick = () => setTab("marked");
+
+$("#q").addEventListener("input", (e) => {
+  state.q = e.target.value;
+  $("#qClear").hidden = !state.q;
+  $("#list").scrollTop = 0;
+  refreshList();
+});
+$("#q").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    const first = $("#list .row");
+    if (!first) return;
+    if (isPhone()) { e.target.blur(); setCollapsed(true); }
+    focusStreet(byId.get(first.dataset.id));
+  }
+});
+function setCollapsed(on) {
+  $("#panel").classList.toggle("collapsed", on);
+  document.body.classList.toggle("sheet-collapsed", on);
+}
+$("#q").addEventListener("focus", () => setCollapsed(false));
+$("#qClear").onclick = () => { $("#q").value = ""; state.q = ""; $("#qClear").hidden = true; refreshList(); $("#q").focus(); };
+document.addEventListener("keydown", (e) => {
+  if (e.key === "/" && document.activeElement !== $("#q")) { e.preventDefault(); $("#q").focus(); }
+  if (e.key === "Escape") map.closePopup();
+});
+$("#sheetToggle").onclick = () => setCollapsed(!$("#panel").classList.contains("collapsed"));
+
+// ---------- export / save ----------
+let toastT = 0;
+function toast(msg) {
+  const t = $("#toast");
+  t.textContent = msg; t.classList.add("show");
+  clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove("show"), 2600);
+}
+function download(name, text, type) {
+  const url = URL.createObjectURL(new Blob([text], { type }));
+  const a = Object.assign(document.createElement("a"), { href: url, download: name });
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+const today = () => new Date().toISOString().slice(0, 10);
+const kmlColor = (hex) => "ff" + hex.slice(5, 7) + hex.slice(3, 5) + hex.slice(1, 3);
+
+$("#btnKml").onclick = () => {
+  const m = markedList();
+  if (!m.length) return toast("Marchează întâi câteva străzi.");
+  const styles = COLORS.map((c) => `<Style id="c${c.slice(1)}"><LineStyle><color>${kmlColor(c)}</color><width>5</width></LineStyle></Style>`).join("");
+  const pms = m.map((s) => {
+    const geo = s.g.map((line) => `<LineString><tessellate>1</tessellate><coordinates>${line.map((p) => `${p[1]},${p[0]},0`).join(" ")}</coordinates></LineString>`).join("");
+    return `<Placemark><name>${esc(s.full)}</name><description>${esc((s.t || "drum") + " · " + fmtLen(s.len) + " · " + COLOR_NAMES[state.marked[s.id]])}</description><styleUrl>#c${state.marked[s.id].slice(1)}</styleUrl><ExtendedData><Data name="Culoare"><value>${COLOR_NAMES[state.marked[s.id]]}</value></Data><Data name="Lungime (m)"><value>${s.len}</value></Data></ExtendedData><MultiGeometry>${geo}</MultiGeometry></Placemark>`;
+  }).join("");
+  const kml = `<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>Străzi marcate Slatina ${today()}</name><description>Date străzi © OpenStreetMap contributors</description>${styles}${pms}</Document></kml>`;
+  download(`Strazi-marcate-Slatina-${today()}.kml`, kml, "application/vnd.google-earth.kml+xml");
+  toast(`KML cu ${m.length} străzi descărcat. Îl imporți în Google My Maps.`);
+};
+
+$("#btnCopy").onclick = async () => {
+  const m = markedList();
+  if (!m.length) return toast("Nu ai nicio stradă marcată.");
+  const km = m.reduce((a, s) => a + s.len, 0);
+  const lines = [`Străzi marcate în Slatina: ${m.length} (${fmtLen(km)})`];
+  for (const col of COLORS) {
+    const g = m.filter((s) => state.marked[s.id] === col);
+    if (!g.length) continue;
+    lines.push("", `${COLOR_NAMES[col]}:`);
+    for (const s of g) lines.push(`- ${s.full} (${fmtLen(s.len)})`);
+  }
+  const text = lines.join("\n");
+  try { await navigator.clipboard.writeText(text); toast("Lista a fost copiată."); }
+  catch (e) { download(`Strazi-marcate-Slatina-${today()}.txt`, text, "text/plain"); toast("Lista a fost salvată ca fișier text."); }
+};
+
+$("#btnSave").onclick = () => {
+  const names = {};
+  for (const id of Object.keys(state.marked)) names[id] = byId.get(id).full;
+  download(`Marcaje-Slatina-${today()}.json`, JSON.stringify({ app: "strazi-slatina", v: 1, saved: new Date().toISOString(), marked: state.marked, names }, null, 1), "application/json");
+  toast("Marcajele au fost salvate într-un fișier.");
+};
+$("#btnLoad").onclick = () => $("#file").click();
+$("#file").addEventListener("change", async (e) => {
+  const f = e.target.files[0];
+  e.target.value = "";
+  if (!f) return;
+  try {
+    const d = JSON.parse(await f.text());
+    if (!d || typeof d.marked !== "object") throw new Error();
+    let ok = 0, miss = 0;
+    for (const s of markedList()) setMarkQuiet(s, null);
+    for (const [id, c] of Object.entries(d.marked)) {
+      const s = byId.get(id);
+      if (s && COLORS.includes(c)) { setMarkQuiet(s, c); ok++; } else miss++;
+    }
+    persist(); refreshList(); updateCount(); scheduleLabels();
+    toast(`Încărcate ${ok} străzi${miss ? `, ${miss} negăsite` : ""}.`);
+  } catch (err) { toast("Fișierul nu e o salvare de marcaje validă."); }
+});
+function setMarkQuiet(s, c) { if (c) state.marked[s.id] = c; else delete state.marked[s.id]; drawMarked(s); }
+
+let clearArm = 0;
+$("#btnClear").onclick = (e) => {
+  const b = e.currentTarget;
+  if (!markedList().length) return toast("Nu ai nicio stradă marcată.");
+  if (!b.classList.contains("armed")) {
+    b.classList.add("armed"); b.textContent = "Sigur? Apasă din nou";
+    clearTimeout(clearArm); clearArm = setTimeout(() => { b.classList.remove("armed"); b.textContent = "Șterge marcajele"; }, 3500);
+    return;
+  }
+  clearTimeout(clearArm); b.classList.remove("armed"); b.textContent = "Șterge marcajele";
+  for (const s of markedList()) setMarkQuiet(s, null);
+  persist(); refreshList(); updateCount(); scheduleLabels();
+  toast("Toate marcajele au fost șterse.");
+};
+
+// ---------- Google (only when config.js carries a key) ----------
+function loadGoogle() {
+  window.gm_authFailure = () => {
+    GOOGLE = false;
+    setBase(state.base);
+    $("#sv").hidden = true;
+    updateNote();
+    toast("Cheia Google nu e acceptată pe acest site. Folosesc imaginile Esri.");
+  };
+  window.__gmReady = async () => {
+    try { await google.maps.importLibrary("streetView"); } catch (e) {}
+    GOOGLE = true;
+    setBase(state.base);
+    updateNote();
+  };
+  const sc = document.createElement("script");
+  sc.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(GKEY)}&v=weekly&loading=async&language=ro&region=RO&callback=__gmReady`;
+  sc.async = true;
+  sc.onerror = () => toast("Google Maps nu s-a putut încărca. Folosesc imaginile Esri.");
+  document.head.appendChild(sc);
+}
+
+let pano = null, svDot = null;
+function bearing(a, b) {
+  const r = Math.PI / 180, y = Math.sin((b.lng - a.lng) * r) * Math.cos(b.lat * r);
+  const x = Math.cos(a.lat * r) * Math.sin(b.lat * r) - Math.sin(a.lat * r) * Math.cos(b.lat * r) * Math.cos((b.lng - a.lng) * r);
+  return (Math.atan2(y, x) / r + 360) % 360;
+}
+function openSV(lat, lng) {
+  const target = { lat, lng };
+  new google.maps.StreetViewService().getPanorama({ location: target, radius: 80, source: google.maps.StreetViewSource.OUTDOOR }, (data, status) => {
+    if (status !== "OK") return toast("Nu există Street View în acest punct. Încearcă puțin mai încolo.");
+    $("#sv").hidden = false;
+    map.closePopup();
+    if (!pano) {
+      pano = new google.maps.StreetViewPanorama($("#svPano"), { addressControl: true, fullscreenControl: true, motionTracking: false, enableCloseButton: false });
+      pano.addListener("position_changed", () => {
+        const p = pano.getPosition();
+        if (!p) return;
+        const ll = [p.lat(), p.lng()];
+        if (!svDot) svDot = L.circleMarker(ll, { radius: 8, color: "#fff", weight: 3, fillColor: "#f9a825", fillOpacity: 1, pane: "flash" });
+        svDot.setLatLng(ll).addTo(map);
+      });
+    }
+    const at = data.location.latLng;
+    const dist = map.distance([at.lat(), at.lng()], [lat, lng]);
+    pano.setPano(data.location.pano);
+    pano.setPov({ heading: dist > 3 ? bearing({ lat: at.lat(), lng: at.lng() }, target) : 0, pitch: 0 });
+    pano.setVisible(true);
+  });
+}
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-sv]");
+  if (!b || !GOOGLE) return;
+  const [lat, lng] = b.dataset.sv.split(",").map(Number);
+  openSV(lat, lng);
+});
+$("#svClose").onclick = () => { $("#sv").hidden = true; if (svDot) svDot.remove(); };
+
+function updateNote() {
+  $("#note").textContent = `${NAMED.length} străzi cu nume și ${STREETS.length - NAMED.length} porțiuni fără nume în OSM (marcabile din hartă). Date OSM din ${OSM_DAY}. `
+    + (GOOGLE ? "Imagini Google active. " : "Imagini Esri (cu o cheie Google în config.js apar imaginile Google). ")
+    + "Click dreapta pe hartă = Street View în orice punct.";
+}
+
+// ---------- boot ----------
+updateNote();
+if (GKEY) loadGoogle();
+map.fitBounds(boundaryBounds, { paddingTopLeft: panelPad(), paddingBottomRight: panelPadBR() });
+setBase(state.base);
+setOpt("boundary", state.boundary);
+setOpt("lines", state.lines);
+setOpt("names", state.names);
+renderPen();
+for (const id of Object.keys(state.marked)) drawMarked(byId.get(id));
+zoomClass();
+updateCount();
+refreshList();
+updateGmaps();
+if (isPhone()) setCollapsed(true);
+if (document.fonts) document.fonts.ready.then(scheduleLabels);
+</script>
+</body>
+</html>
